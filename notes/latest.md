@@ -89,3 +89,10 @@
   - plugin.d.ts: device 由可选改为必填（与主程序 Plugin 声明一致，入口 index.ts 已提供）
 - 发布: 版本 0.1.1 上架插件市场 —— 包上传到 OSS `plugins/flavor/0.1.1/wmview.flavor.zip`，
   图标同步 `plugins/flavor/icon.png`，市场库 `public.plugins` 同步为 version=0.1.1、platform=windows,android
+
+- 发布: 源码上传 GitHub → https://github.com/qmlCoder/wmview_flavor（public）
+  一并把旧提交里的 `flavor.exe`（60.7 MB）与 `flavor.zip`（37.3 MB）从历史里清掉
+  （`.git` 151 MB → 2.3 MB），两者已加入 `.gitignore`；历史保留两个提交：
+  `使用python实现` → `移植: 推理核由 Python 版换成 Rust→wasm`
+- 待办: `info.json` 还没有 `github` 字段（市场列表要用），需要时补上并
+  `python update.py --set-github "flavor https://github.com/qmlCoder/wmview_flavor"`
