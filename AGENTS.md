@@ -63,7 +63,7 @@ interface Plugin {
   `show_loading`/`hide_loading`、`read_text`/`save_text`、`save_file_dialog`、
   `set_bottom_message`、`get_show_siders` 等
 - `wmapi_files` —— 文件/根目录：`wait_root`、`get_rootFold`、`get_moleFold`、
-  `get_plugFold`、`show_file` 等
+  `get_plugFold`、`load_file(name, show)`、`get_file_list` 等
 - `wmapi_scene` / `wmapi_editor` / `wmapi_script` / `wmapi_wfana` —— 场景、建模、
   脚本、波函数分析等按需查阅对应 d.ts
 
@@ -104,14 +104,23 @@ npm run build      # 产出 dist/（含 index.js 入口 + assets，供本地安�
 
 > 本文件会被 `wmview-plugin update` 覆盖，项目自身的说明以 `README.md` 与 `notes/latest.md` 为准。
 
+- **前端源码统一放在 `src/`**（`src/index.ts` 入口、`src/Sider.vue` 面板、`src/comps/` 通用组件），
+  与第 2 节描述的模板根目录布局不同；`vite.config.ts` 的 `exposes`、`index.html` 入口脚本与
+  `tsconfig.app.json` 的 include 均按 `src/` 配置。`wmview-plugin update` 往根目录重新落地的
+  模板文件（index.ts / Sider.vue / comps）需要手工搬进 `src/` 并同步上述三处路径。
 - **只用 `window.wmapi_*` API 与主程序交互**，不读取、不引用主程序仓库的源码/内部模块。
-- 推理程序 `flavor.exe`（PyInstaller 单文件，内含 numpy + rdkit + 模型权重）：源码在 `py/`，
-  用 `build_exe.py` 重新打包；前端通过 `run_exe('plugin_flavor', '<插件目录>/flavor.exe', [], JSON)`
-  调用，结果取输出中以 `@@FLAVOR_RESULT@@` 打头的那行 JSON。
-- 模型权重由 `py/export_weights.py` 从 `flavor/best_model_pharma33.pt` 导出为
-  `flavor/pharma33_weights.npz`；改动模型后需重新导出并重打包 exe。
-- 修改特征或前向实现后，务必跑 `py/validate_numpy.py` 与 torch + PyG 参考实现对拍
-  （阈值：最大 logit 偏差 < 1e-4）。
+- **运行时是纯前端 + Rust→wasm，没有任何外部进程**：化学感知在 `src/chem/`（rdkit.js +
+  按 RDKit 源码移植的逐原子描述符与药效团），前向核在 `flavor-core/`（纯 Rust，编成 wasm），
+  两者由 `src/chem/browser.ts` 装配、`src/chem/pipeline.ts` 串起来。**不要**改回 `run_exe`：
+  它在 Android 沙箱里不允许执行私有目录的二进制，改回就等于放弃移动端。
+- 权重由 `flavor/pharma33_weights.bin` + `.json`（扁平 f32）提供，来自
+  `py/export_weights_flat.py`；表（Crippen / fdef / 元素量）来自 `py/export_tables.py`。
+  改了 Rust 必须 `npm run build:wasm` 重编 wasm（`npm run build` 已包含）。
+- 修改特征或前向实现后，务必跑 `npx tsx tools/validate-chem.ts`（化学层 vs 本机 RDKit，
+  逐项偏差应为 0 / ≤1.6e-3）与 `node flavor-core/verify-wasm.mjs`（wasm vs numpy，
+  阈值：最大 logit 偏差 < 1e-4）。
+- `py/` 是**开发用的参考实现**（导表、导权重、对拍基准、旧的 exe 版本），不参与运行时，
+  也不随插件包分发；改动 `py/` 不需要重新打包插件。
 - **`wmapi.d.ts` 是宿主声明的同步副本**：模板自带的版本已过期（写成 `get_moleInfo` / `get_files` /
   `get_selects`，程序里没有），更新模板后需按 `src/wmapi.d.ts`、`src/plugin/filelist/wmapi.d.ts`、
   `src/plugin/scene/wmapi.d.ts` 重新同步；调用宿主 API 前先确认方法名与是否异步。

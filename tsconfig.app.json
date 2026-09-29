@@ -1,14 +1,6 @@
 {
   "extends": "@vue/tsconfig/tsconfig.dom.json",
-  "include": [
-    "env.d.ts",
-    "plugin.d.ts",
-    "wmapi.d.ts",
-    "index.ts",
-    "Sider.vue",
-    "comps/**/*",
-    "src/**/*"
-  ],
+  "include": ["env.d.ts", "src/plugin.d.ts", "src/wmapi.d.ts", "src/**/*"],
   "exclude": ["src/**/__tests__/*"],
   "compilerOptions": {
     "noUncheckedIndexedAccess": false,

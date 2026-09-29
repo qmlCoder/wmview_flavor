@@ -127,6 +127,12 @@ export interface wmapi_cores {
 
   // 当前显示的siderl和siderr
   get_show_siders: () => [string, string]
+
+  // 添加markdon文档 path:文档路径 content 内容
+  add_appdoc: (path: string, content: string) => void
+
+  // 显示指定路径的文档
+  show_doc:(path:string)=>void
 }
 
 // ===================== 文件 API =====================
@@ -172,18 +178,23 @@ export interface wmapi_files {
   get_mole_info: (name: string) => Promise<MoleInfo>
 
   /**
-   * 显示指定名称的分子文件
+   * 加载指定名称的分子文件
    * @param name 分子文件名
+   * @param show 是否切换为当前显示的分子（false 为静默加载）
    */
-  show_file: (name: string) => void
+  load_file: (name: string, show: boolean) => void
 
-  // 获取选择的文件
+  // 获取选择的文件 vue Ref<string>
   get_select: () => string
 
+  // 获取多选的文件 vue Ref<string[]>
   get_option: () => string[]
 
   // 选择文件变化时触发，获取先择的文件名
   on_select: (callback: (select: string) => void) => void
+
+  // 多选文件变化时触发，获取先择的文件名
+  on_option: (callback: (option: string[]) => void) => void
 }
 
 // ===================== 场景 API =====================
@@ -211,6 +222,9 @@ export interface wmapi_scene {
   // 获取用户选择的原子的索引
   get_atom_select: (mole_name: string) => number[]
 
+  // 设置分子选择的原子 atms:选择的原子
+  set_atom_select: (mole_name: string, atms: number[]) => void
+
   // 添加一个箭头
   add_arrow: (mole_name: string, args: ArrowArgs) => void
 
@@ -227,7 +241,7 @@ export interface wmapi_scene {
   /**
    * 在分子指定的位置添加一个局部坐标系
    * @param mole_name 分子名
-   * @param args cent: 局部坐标系的中心位置 dirs: 局部坐标系三条坐标轴的方向
+   * @param args cent: 局部坐标系的中心位置 dirs: 局部坐标系三条坐标轴的方向，依次为 x 轴、y 轴、z 轴，必须给出 3 个长度为3的单位向量
    * @returns
    */
   add_systm: (mole_name: string, args: SystmArgs) => void
@@ -238,6 +252,9 @@ export interface wmapi_scene {
    * @returns
    */
   clear_group: (group_name?: string) => void
+
+  // 原子选择变化时触发
+  on_atom_select: (callback: (mole_name: string, atms: number[]) => void) => void
 }
 
 declare global {

@@ -16,7 +16,7 @@ export default defineConfig({
       name: 'wmview_flavor',
       filename: 'index.js', // 入口文件名固定，主程序只认 index.js
       exposes: {
-        './index': './index.ts', // 与插件入口文件保持一致
+        './index': './src/index.ts', // 与插件入口文件保持一致（源码统一放 src/）
       },
       // 暴露模块时把组件样式一起带上，避免消费端拿不到 CSS
       bundleAllCSS: true,

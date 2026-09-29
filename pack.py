@@ -43,13 +43,12 @@ if _info.get("version") != VERSION:
 
 # ====================== 【只需修改这里】 ======================
 # MF 构建产物: index.js 是入口，assets/ 是运行时 chunk（必须一起打包）。
-# flavor.exe 是推理程序（PyInstaller 打包，内置 numpy + rdkit + 模型权重）。
+# assets/ 里还包含推理所需的资源：rdkit.js 与 flavor-core 的 wasm、6.3 MB 模型权重。
 TO_COMPRESS = [
     "dist/index.js",  # MF remote 入口
-    "dist/assets",  # 运行时 chunk + css
+    "dist/assets",  # 运行时 chunk + css + wasm + 模型权重
     "info.json",  # 插件市场元数据（含版本号）
-    "icon.png",  # 插件图标 → zip 根目录 icon.png
-    "flavor.exe",  # 气味预测推理程序（免 python 运行时）
+    "src/icon.png",  # 插件图标 → zip 根目录 icon.png
 ]
 
 OUTPUT = "wmview.flavor.zip"

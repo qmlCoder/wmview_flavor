@@ -22,5 +22,5 @@ export interface Plugin {
   apidoc?: string // 场景的API文档
   position: 'left' | 'right' // 位置
   kind?: 'builtin' | 'local' | 'dev' // 类型
-  device?: DeviceType[] // 支持运行的平台
+  device: DeviceType[] // 支持运行的平台（主程序当前声明为必填，入口已提供）
 }

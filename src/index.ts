@@ -18,7 +18,8 @@ export const plugin: Plugin = {
   name: 'flavor',
   sider: { name: 'flavor', icon: icon, comp: Sider },
   position: 'right',
-  device: ['windows'],
+  // 推理走进程内 wasm（不依赖 run_exe 执行外部程序），所以 Windows 与 Android 都能用
+  device: ['windows', 'android'],
 }
 
 export default plugin

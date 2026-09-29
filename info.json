@@ -1,5 +1,6 @@
 {
   "name": "wmview.flavor",
   "desc": "分子气味（flavor）预测插件",
-  "version": "0.1.0"
+  "version": "0.1.1",
+  "platform": "windows,android"
 }

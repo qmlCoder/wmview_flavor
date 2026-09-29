@@ -102,7 +102,11 @@ div.doc strong {
       </div>
     </PanelItem>
 
-    <PanelItem v-else title="SMILES">
+    <PanelItem
+      v-else
+      title="SMILES"
+      tip="SMILES 没有 3D 坐标，这里用 RDKit 的 2D 平面坐标，精度不如场景分子"
+    >
       <el-input
         v-model="state.smiles"
         size="small"
@@ -121,8 +125,19 @@ div.doc strong {
       ></el-input-number>
     </PanelItem>
 
-    <PanelItem title="程序路径" tip="留空自动查找：<plugs>/wmview.flavor/flavor.exe">
-      <el-input v-model="state.exePath" size="small" clearable placeholder="自动查找 flavor.exe"></el-input>
+    <PanelItem title="推理核" tip="化学感知与模型前向都在本进程内运行（rdkit.js + Rust→wasm）">
+      <div :class="$style.row">
+        <span :class="$style.empty">{{ state.engineMsg }}</span>
+        <el-button
+          v-if="state.engine === 'error'"
+          size="small"
+          text
+          type="primary"
+          @click="reload_engine"
+        >
+          重试
+        </el-button>
+      </div>
     </PanelItem>
   </PanelGroup>
 
@@ -191,10 +206,13 @@ div.doc strong {
       <ul>
         <li>输入：场景里打开的分子，或直接粘贴 SMILES</li>
         <li>输出：138 个标签的概率条，可导出 CSV，命中项同时写入结果日志</li>
-        <li>推理在本地 <code>flavor.exe</code> 中完成（内置 numpy + RDKit + 权重），不联网</li>
+        <li>推理在<strong>本进程内</strong>完成：化学感知用 rdkit.js，前向是 Rust 编译的 wasm，不联网、无外部程序</li>
+        <li>因为不依赖可执行文件，Windows 与 Android 都能跑</li>
       </ul>
       <p :class="$style.tip">
-        场景分子按坐标推断键级，SMILES 由 RDKit 生成 3D 构象后预测；运行时不需要 PyTorch。
+        场景分子按坐标推断键级；SMILES 没有 3D 坐标，只能用 RDKit 的 2D 平面坐标，
+        而药效团特征里含绝对坐标项，所以精度低于场景分子（实测 top-10 标签平均重叠 7/10）。
+        想要最准的结果，请打开分子的 3D 结构文件再预测。
       </p>
     </div>
   </PanelGroup>
@@ -207,14 +225,17 @@ div.doc strong {
             <li>打开分子文件（SDF / MOL / PDB / xyz / gjf …），或把「分子来源」切到 SMILES 粘贴结构式。</li>
             <li>按需填写「总电荷」——离子分子要填对，否则键级推断会出错。</li>
             <li>设置「命中阈值」（越接近 1 越严格）与「显示条数 / 只看命中」。</li>
-            <li>点「预测气味」，等待通知后即可在下方看到概率条。</li>
+            <li>等「推理核」显示<strong>已就绪</strong>（首次约 1–3 秒），点「预测气味」即可在下方看到概率条。</li>
             <li>点「导出 CSV」选择保存路径，把完整结果存成表格。</li>
           </ol>
         </el-collapse-item>
 
         <el-collapse-item name="source" title="② 选哪种分子来源">
           <ul>
-            <li><strong>SMILES</strong>：最省事也最稳，RDKit 生成 3D 构象并做 MMFF94 优化。</li>
+            <li>
+              <strong>SMILES</strong>：最省事，但只有 2D 平面坐标（RDKit 不提供构象生成），
+              药效团特征里的绝对坐标项会因此偏粗——<strong>想准就用场景分子</strong>。
+            </li>
             <li><strong>场景分子（原文件可读）</strong>：直接用文件自带的键级，SDF / MOL / PDB 等最准确。</li>
             <li><strong>场景分子（仅坐标 + 连接表）</strong>：由 3D 坐标推断键级，分子带显式氢时准确。</li>
             <li><strong>场景分子（无显式氢且读不到文件）</strong>：只能按单键退化处理，结果仅供参考，建议改用 SMILES。</li>
@@ -232,11 +253,10 @@ div.doc strong {
         <el-collapse-item name="faq" title="④ 常见问题">
           <ul>
             <li>
-              提示找不到 <code>flavor.exe</code>：留空时按
-              <code>&lt;plugs&gt;/wmview.flavor/flavor.exe</code> 查找；开发模式（插件跑在 dev
-              server）下插件不在 plugs 里，请在「程序路径」填项目中的 <code>flavor.exe</code>。
+              「推理核」显示<strong>加载失败</strong>：多为插件包不完整（缺 <code>assets/</code> 里的
+              wasm 或权重）。重新解压安装包再试；也可以点「重试」重新加载。
             </li>
-            <li>首次预测要等几秒：exe 是 PyInstaller 单文件，启动时需解压内置依赖。</li>
+            <li>首次预测前要等 1–3 秒：要加载 7.3 MB 的 RDKit wasm 与 6.3 MB 权重，之后每个分子只要几十毫秒。</li>
             <li>出现「键级推断」警告：分子缺少显式氢，结果仅供参考。</li>
             <li>想确认宿主接口：点「接口自检」，宿主实际暴露的 <code>wmapi_*</code> 方法会写进日志。</li>
           </ul>
@@ -247,30 +267,11 @@ div.doc strong {
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive } from 'vue'
+import { computed, nextTick, onMounted, reactive } from 'vue'
 import PanelGroup from './comps/Panel-Group.vue'
 import PanelItem from './comps/Panel-Item.vue'
-
-/** 预测结果条目 */
-interface FlavorResult {
-  label: string
-  prob: number
-  hit: boolean
-}
-
-/** flavor.exe 的输出（最后一行以 @@FLAVOR_RESULT@@ 打头） */
-interface FlavorReply {
-  ok: boolean
-  error?: string
-  warning?: string | null
-  smiles?: string
-  atoms?: number
-  pharmacophores?: number
-  results?: FlavorResult[]
-}
-
-const RESULT_MARK = '@@FLAVOR_RESULT@@'
-const EXE_SOURCE = 'plugin_flavor'
+import { loadFlavorRuntime, type FlavorRuntime } from './chem/browser'
+import { predict as run_predict, type FlavorInput, type FlavorResultItem } from './chem/pipeline'
 
 /** 分子结构（syms / xyzs / bonds），兼容不同版本的程序接口 */
 interface MoleGeom {
@@ -284,13 +285,14 @@ const state = reactive({
   moleName: '' as string,
   smiles: '',
   charge: 0,
-  exePath: '',
   threshold: 0.5,
   topN: 15,
   onlyHit: false,
   running: false,
-  results: [] as FlavorResult[],
+  results: [] as FlavorResultItem[],
   summary: '',
+  engine: 'idle' as 'idle' | 'loading' | 'ready' | 'error',
+  engineMsg: '尚未加载',
   docOpen: ['quick'] as string[],
 })
 
@@ -305,18 +307,35 @@ const refresh_mole = () => {
   state.moleName = window.wmapi_scene?.get_mole_name() ?? ''
 }
 
-/** 从 run_exe 的合并输出里取出结果 JSON */
-const parse_reply = (output: string): FlavorReply | null => {
-  const line = output
-    .split(/\r?\n/)
-    .reverse()
-    .find((l) => l.startsWith(RESULT_MARK))
-  if (!line) return null
-  try {
-    return JSON.parse(line.slice(RESULT_MARK.length)) as FlavorReply
-  } catch {
-    return null
+/** 推理核就绪后的状态文案 */
+const engine_info = (rt: FlavorRuntime) =>
+  `已就绪 · RDKit ${rt.rdkitVersion} · ${rt.classes} 个标签 · 载入 ${rt.loadMs.toFixed(0)} ms`
+
+/** 确保推理核已加载（幂等；并发调用只会加载一次） */
+const ensure_engine = async (): Promise<FlavorRuntime> => {
+  if (state.engine === 'ready') {
+    const rt = await loadFlavorRuntime()
+    return rt
   }
+  state.engine = 'loading'
+  try {
+    const rt = await loadFlavorRuntime((msg) => {
+      state.engineMsg = msg
+    })
+    state.engine = 'ready'
+    state.engineMsg = engine_info(rt)
+    return rt
+  } catch (err) {
+    state.engine = 'error'
+    state.engineMsg = `加载失败：${(err as Error).message}`
+    throw err
+  }
+}
+
+/** 手动重试加载（失败后按钮触发） */
+const reload_engine = () => {
+  state.engine = 'idle'
+  void ensure_engine().catch(() => {})
 }
 
 /**
@@ -352,11 +371,11 @@ const read_mole = async (name: string): Promise<MoleGeom> => {
 }
 
 /** 组装预测请求：场景分子（优先用分子文件的键级，其次用坐标 + 连接表）或 SMILES */
-const build_payload = async () => {
+const build_input = async (): Promise<FlavorInput> => {
   if (state.source === 'smiles') {
     const smiles = state.smiles.trim()
     if (!smiles) throw new Error('请先填入 SMILES')
-    return { smiles, threshold: state.threshold }
+    return { smiles }
   }
   const name = state.moleName || window.wmapi_scene?.get_mole_name() || ''
   if (!name) throw new Error('场景里还没有分子，先打开一个分子文件')
@@ -368,11 +387,11 @@ const build_payload = async () => {
       if (fold) {
         const text = await window.wmapi_cores.read_text(`${fold}/${name}`)
         if (text && /M\s+END/.test(text) && /V2000|V3000/.test(text)) {
-          return { molblock: text.split('$$$$')[0], threshold: state.threshold }
+          return { molblock: text.split('$$$$')[0] }
         }
       }
     } catch {
-      // 读文件失败就退回场景数据，交给 exe 用坐标推断键级
+      // 读文件失败就退回场景数据，由前端按坐标推断键级
     }
   }
 
@@ -382,27 +401,14 @@ const build_payload = async () => {
     xyzs: info.xyzs,
     bonds: info.bonds ?? [],
     charge: state.charge,
-    threshold: state.threshold,
   }
 }
 
-/**
- * 解析 flavor.exe 路径。
- * `wmapi_files.get_plugFold()` 返回的是 **plugs 根目录**（已用运行中的程序确认），
- * 安装后的插件在 `plugs/wmview.flavor/` 下；同时保留“plugFold 即插件目录”的兼容分支，
- * 面板里的「程序路径」可以直接指定（开发联调时很方便）。
- */
-const exe_candidates = (): string[] => {
-  if (state.exePath.trim()) return [state.exePath.trim()]
-  const plugs = (window.wmapi_files?.get_plugFold() ?? '').replace(/[\\/]+$/, '')
-  if (!plugs) return []
-  return [`${plugs}/wmview.flavor/flavor.exe`, `${plugs}/flavor.exe`]
-}
-
 const predict = async () => {
-  let payload: Record<string, unknown>
+  if (state.running) return
+  let input: FlavorInput
   try {
-    payload = await build_payload()
+    input = await build_input()
   } catch (err) {
     window.wmapi_cores.notify((err as Error).message, 'warning')
     return
@@ -411,36 +417,17 @@ const predict = async () => {
   state.running = true
   window.wmapi_cores.show_loading('气味预测中…')
   try {
-    const candidates = exe_candidates()
-    if (!candidates.length) {
-      window.wmapi_cores.notify('找不到插件目录，请在「程序路径」里填写 flavor.exe 的完整路径', 'error')
-      return
-    }
-    let reply: FlavorReply | null = null
-    const tried: string[] = []
-    let last = ''
-    // 路径不存在时 run_exe 会抛异常，因此逐个尝试、逐个兜住
-    for (const exe of candidates) {
-      try {
-        const [, output] = await window.wmapi_cores.run_exe(
-          EXE_SOURCE,
-          exe,
-          [],
-          JSON.stringify(payload),
-        )
-        last = output
-        reply = parse_reply(output)
-        if (reply) break
-      } catch (err) {
-        tried.push(`${exe} → ${(err as Error).message}`)
-      }
-    }
-    if (!reply) {
-      const detail = [tried.join('\n'), last].filter(Boolean).join('\n')
-      window.wmapi_cores.notify('flavor.exe 运行失败：找不到程序或输出无法解析', 'error')
-      window.wmapi_cores.add_logText('flavor', detail)
-      return
-    }
+    const runtime = await ensure_engine()
+    // 让加载面板先渲染出来，再做同步的特征提取 + 前向
+    await nextTick()
+    await new Promise((resolve) => setTimeout(resolve, 16))
+
+    const reply = run_predict(input, {
+      labels: runtime.labels,
+      featureDefs: runtime.featureDefs,
+      forward: runtime.forward,
+      threshold: state.threshold,
+    })
     if (!reply.ok) {
       window.wmapi_cores.notify(reply.error || '预测失败', 'error')
       window.wmapi_cores.add_logText('flavor', reply.error || '')
@@ -464,7 +451,8 @@ const predict = async () => {
         .join('\n'),
     )
   } catch (err) {
-    window.wmapi_cores.notify(`调用 flavor.exe 失败：${(err as Error).message}`, 'error')
+    window.wmapi_cores.notify(`预测失败：${(err as Error).message}`, 'error')
+    window.wmapi_cores.add_logText('flavor', String((err as Error).stack ?? err))
   } finally {
     window.wmapi_cores.hide_loading()
     state.running = false
@@ -492,6 +480,8 @@ const self_check = () => {
   window.wmapi_cores.add_logText(
     'flavor',
     [
+      `平台: ${navigator.userAgent}`,
+      `推理核: ${state.engineMsg}`,
       dump('wmapi_files', window.wmapi_files),
       dump('wmapi_cores', window.wmapi_cores),
       dump('wmapi_scene', window.wmapi_scene),
@@ -503,5 +493,7 @@ const self_check = () => {
 
 onMounted(() => {
   refresh_mole()
+  // 进面板就先把推理核加载起来，用户点预测时就不用等
+  void ensure_engine().catch(() => {})
 })
 </script>
